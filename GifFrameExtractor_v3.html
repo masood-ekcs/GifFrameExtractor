@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GIF Frame Extractor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+
+        #container {
+            max-width: 800px;
+            margin: 160px auto 0; /* Adjust margin to accommodate fixed header and input */
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            position: fixed;
+            width: 100%;
+            background: #c0f5db;
+            /* Updated background color */
+            top: 0;
+            left: 0;
+            padding: 10px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .input-wrapper {
+            text-align: center;
+            position: fixed;
+            width: 100%;
+            background: #c0f5db;
+            /* Updated background color */
+            top: 60px;
+            /* Adjust based on header height */
+            left: 0;
+            padding: 10px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .custom-file-input, .custom-url-input, .url-button {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+            margin: 5px;
+        }
+
+        .custom-file-input:hover, .custom-url-input:hover, .url-button:hover {
+            background-color: #0056b3;
+        }
+
+        .url-input {
+            padding: 10px;
+            width: 300px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin-right: 10px;
+        }
+
+        #filename {
+            margin-top: 10px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .filename-color {
+            color: red;
+            font-weight: bold;
+        }
+
+        #framesContainer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .frame {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .frame canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>GIF Frame Extractor</h1>
+    <div class="input-wrapper">
+        <input type="file" id="gifInput" accept="image/gif" />
+        <input type="text" id="urlInput" class="url-input" placeholder="Enter GIF URL" />
+        <button class="url-button" id="fetchUrlButton">Fetch GIF</button>
+        <label class="custom-file-input" for="gifInput">Choose File</label>
+        <div id="filename"></div>
+    </div>
+    <div id="container">
+        <div id="framesContainer"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/omggif@1.0.10/omggif.min.js"></script>
+
+    <script>
+        document.getElementById("gifInput").addEventListener("change", function (event) {
+            const file = event.target.files[0];
+            const filenameDisplay = document.getElementById("filename");
+
+            if (file) {
+                filenameDisplay.innerHTML = `Selected file: <span class="filename-color">${file.name}</span>`;
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const arrayBuffer = e.target.result;
+                    extractFrames(arrayBuffer);
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                filenameDisplay.textContent = "";
+            }
+        });
+
+        document.getElementById("fetchUrlButton").addEventListener("click", function () {
+            const url = document.getElementById("urlInput").value;
+            const filenameDisplay = document.getElementById("filename");
+
+            if (url) {
+                filenameDisplay.innerHTML = `Selected URL: <span class="filename-color">${url}</span>`;
+                fetchWithCorsProxy(url)
+                    .then(arrayBuffer => extractFrames(arrayBuffer))
+                    .catch(error => {
+                        console.error("Error fetching the GIF from URL:", error);
+                        filenameDisplay.textContent = "Error fetching the GIF from URL.";
+                    });
+            }
+        });
+
+        function fetchWithCorsProxy(url) {
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+            return fetch(proxyUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const base64Content = data.contents.match(/base64,(.*)$/)[1];
+                    const binaryString = atob(base64Content);
+                    const len = binaryString.length;
+                    const bytes = new Uint8Array(len);
+                    for (let i = 0; i < len; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    return bytes.buffer;
+                });
+        }
+
+        function extractFrames(arrayBuffer) {
+            const gif = new GifReader(new Uint8Array(arrayBuffer));
+            const framesContainer = document.getElementById("framesContainer");
+            framesContainer.innerHTML = ""; // Clear previous frames
+
+            for (let i = 0; i < gif.numFrames(); i++) {
+                const frameInfo = gif.frameInfo(i);
+                const canvas = document.createElement("canvas");
+                canvas.width = frameInfo.width;
+                canvas.height = frameInfo.height;
+                const context = canvas.getContext("2d");
+                const imageData = context.createImageData(frameInfo.width, frameInfo.height);
+                gif.decodeAndBlitFrameRGBA(i, imageData.data);
+                context.putImageData(imageData, 0, 0);
+
+                const frameDiv = document.createElement("div");
+                frameDiv.className = "frame";
+                frameDiv.appendChild(canvas);
+                framesContainer.appendChild(frameDiv);
+            }
+        }
+    </script>
+</body>
+</html>
